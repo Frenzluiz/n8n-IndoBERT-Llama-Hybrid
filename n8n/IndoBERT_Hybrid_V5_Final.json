@@ -1,0 +1,506 @@
+{
+  "name": "IndoBERT_Hybrid_V5_Final",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "13782475-8bca-4d4c-a18a-8c928bf73aa5",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        19040,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.antaranews.com/rss/top-news.xml",
+        "options": {}
+      },
+      "id": "7f19bfd3-f26a-4587-83a5-1113a53a2462",
+      "name": "Antara News",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        19296,
+        1168
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://news.detik.com/rss",
+        "options": {}
+      },
+      "id": "d38631fc-60b3-44ce-a6e2-5d30d6ebc9c5",
+      "name": "Detik News",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        19296,
+        976
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst uniqueTitles = new Set();\n\nreturn items.filter(item => {\n  const title = item.json.title;\n  if (!title || uniqueTitles.has(title)) return false;\n  uniqueTitles.add(title);\n  return true;\n}).slice(0, 5).map(item => {\n  let cleanText = item.json.contentSnippet || item.json.content || \"\";\n  cleanText = cleanText.replace(/<[^>]*>?/gm, '').replace(/[\\r\\n\\t]+/g, ' ').trim();\n  return {\n    json: {\n      judul: item.json.title,\n      teks_bersih: cleanText\n    }\n  };\n});"
+      },
+      "id": "d2a18a79-3c7f-4917-9164-6a1d6fe52ad9",
+      "name": "Clean & Deduplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        19568,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://unsicker-unpolitely-emely.ngrok-free.dev/predict",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "judul",
+              "value": "={{ $json.judul }}"
+            },
+            {
+              "name": "text",
+              "value": "={{ $json.teks_bersih }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c7954967-3829-40e1-b9e9-9b6f6d71ccee",
+      "name": "IndoBERT Final Boss",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        19808,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "e30573e8-8b77-4481-8051-246e75a68c07",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 0.6,
+              "operator": {
+                "type": "number",
+                "operation": "larger"
+              }
+            },
+            {
+              "id": "46f069a2-d7b3-4141-ace7-7790fccf8009",
+              "leftValue": "={{ $json.is_reliable }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "348294cb-7610-4b19-a2d0-c8d44034ba96",
+      "name": "Is Confident?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        20032,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3\",\n  \"prompt\": {{ JSON.stringify(\n    \"Ekstrak Tokoh & Lokasi.\\n\" +\n    \"Judul: \" + $json.judul + \"\\n\" +\n    \"Sentimen Saat Ini: \" + $json.sentiment + \"\\n\\n\" +\n    \"Format JSON murni (WAJIB SERTAKAN SEMUA FIELD INI): \" +\n    \"{\\\"judul\\\":\\\"\" + $json.judul + \"\\\", \\\"tokoh\\\":\\\"nama\\\", \\\"lokasi\\\":\\\"tempat\\\", \\\"sentimen\\\":\\\"\" + $json.sentiment + \"\\\"}\"\n  ) }},\n  \"stream\": false,\n  \"format\": \"json\"\n}",
+        "options": {
+          "timeout": 900000
+        }
+      },
+      "id": "5530ec66-642e-4aca-ba62-5013c29506f2",
+      "name": "Fast Entity Extractor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        20272,
+        928
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:11434/api/generate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"llama3\",\n  \"prompt\": {{ JSON.stringify(\n    \"Analisis mendalam.\\nJudul: \" + $json.judul + \"\\nIsi: \" + $json.teks_bersih + \n    \"\\n\\nFormat JSON murni (WAJIB ADA FIELD JUDUL): \" +\n    \"{\\\"judul\\\":\\\"\" + $json.judul + \"\\\", \\\"sentimen\\\":\\\"Positif/Negatif/Netral\\\", \\\"urgensi\\\":1-10, \\\"tokoh\\\":\\\"nama\\\", \\\"lokasi\\\":\\\"tempat\\\", \\\"ringkasan\\\":\\\"1 kalimat\\\"}\"\n  ) }},\n  \"stream\": false,\n  \"format\": \"json\"\n}",
+        "options": {
+          "timeout": 1200000
+        }
+      },
+      "id": "b1a3f344-2478-4c7a-a5f8-086fe86d0357",
+      "name": "Ollama Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        20272,
+        1184
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const finalResults = [];\nconst processedTitles = new Set();\nconst allOriginalData = $(\"Clean & Deduplicate\").all();\n\nfor (const item of $input.all()) {\n  const data = item.json;\n  let responseText = data.response || \"\";\n  const jsonMatch = responseText.match(/\\{[\\s\\S]*\\}/);\n  let res = {};\n  if (jsonMatch) {\n    try { res = JSON.parse(jsonMatch[0]); } catch (e) { res = {}; }\n  }\n\n  let judulCari = data.judul || res.judul;\n  const original = allOriginalData.find(orig => \n    orig.json.judul && judulCari && \n    orig.json.judul.trim().toLowerCase() === judulCari.trim().toLowerCase()\n  );\n\n  const finalTitle = original ? original.json.judul : (judulCari || \"Tanpa Judul\");\n  const finalContent = original ? original.json.teks_bersih : \"Isi tidak tersedia\";\n\n  if (processedTitles.has(finalTitle)) continue;\n  processedTitles.add(finalTitle);\n\n  // LOGIKA SOURCE BERDASARKAN PROMPT USER\n  let detectedSource = \"IndoBERT Final Boss\";\n  if (data.response) {\n    // Karena Fallback WAJIB punya field 'urgensi' dan 'ringkasan' sedangkan Fast tidak\n    detectedSource = (res.hasOwnProperty('urgensi') || res.hasOwnProperty('ringkasan')) \n      ? \"Ollama Fallback\" \n      : \"Ollama Fast Path\";\n  }\n\n  let finalData = {\n    judul: finalTitle,\n    tokoh: res.tokoh || \"N/A\",\n    lokasi: res.lokasi || \"N/A\",\n    sentimen: (res.sentimen || data.sentiment || \"Netral\").toString().toLowerCase().trim(), \n    // Mengambil urgensi dari Ollama Fallback atau menghitung dari confidence IndoBERT\n    urgensi_dasar: parseInt(res.urgensi) || Math.round((data.confidence || 0.6) * 10),\n    isi: finalContent,\n    ringkasan: res.ringkasan || (finalContent !== \"Isi tidak tersedia\" ? finalContent.substring(0, 150) + \"...\" : \"N/A\"),\n    source: detectedSource\n  };\n\n  const krisisKeys = ['bencana', 'korupsi', 'demo', 'krisis', 'darurat', 'perang', 'kecelakaan', 'pembunuhan', 'skandal'];\n  let bonus = 0;\n  if (finalTitle !== \"Tanpa Judul\") {\n    krisisKeys.forEach(key => { if (finalTitle.toLowerCase().includes(key)) bonus += 3; });\n  }\n  \n  finalData.urgensi_final = Number(Math.min(finalData.urgensi_dasar + bonus, 10));\n  finalResults.push({ json: finalData });\n}\nreturn finalResults;"
+      },
+      "id": "e930a420-3418-453b-b109-a732885bf6a4",
+      "name": "Final Parser & Urgensi Booster",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        20512,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "31b156b6-39bc-4389-9e0a-42c239f15049",
+              "leftValue": "={{ $json.urgensi_dasar }}",
+              "rightValue": 8,
+              "operator": {
+                "type": "number",
+                "operation": "largerEqual"
+              }
+            },
+            {
+              "id": "060708c0-c217-4816-8e4e-f8377b62274f",
+              "leftValue": "={{ $json.urgensi_final }}",
+              "rightValue": 7,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {
+          "ignoreCase": true
+        }
+      },
+      "id": "03190689-2f14-49c9-afa3-084ab737f650",
+      "name": "Emergency Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        20736,
+        1056
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/AKfycbyUBYtYz56H9WiIo1PjsDQRK3i_sUilaxfrb9dL15A47XuyBcA-7EY8Az5GClYMrrwF/exec",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "judul",
+              "value": "={{ $json.judul }}"
+            },
+            {
+              "name": "sentimen",
+              "value": "={{ $json.sentimen }}"
+            },
+            {
+              "name": "urgensi_final",
+              "value": "={{ $json.urgensi_final }}"
+            },
+            {
+              "name": "tokoh",
+              "value": "={{ $json.tokoh }}"
+            },
+            {
+              "name": "lokasi",
+              "value": "={{ $json.lokasi }}"
+            },
+            {
+              "name": "ringkasan",
+              "value": "={{ $json.ringkasan }}"
+            },
+            {
+              "name": "source",
+              "value": "={{ $json.source }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        20944,
+        848
+      ],
+      "id": "9e13bf90-0599-4e2a-bd3c-acfbb2a232ac",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://script.google.com/macros/s/AKfycbyUBYtYz56H9WiIo1PjsDQRK3i_sUilaxfrb9dL15A47XuyBcA-7EY8Az5GClYMrrwF/exec",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "judul",
+              "value": "={{ $json.judul }}"
+            },
+            {
+              "name": "sentimen",
+              "value": "={{ $json.sentimen }}"
+            },
+            {
+              "name": "urgensi_final",
+              "value": "={{ $json.urgensi_final }}"
+            },
+            {
+              "name": "tokoh",
+              "value": "={{ $json.tokoh }}"
+            },
+            {
+              "name": "lokasi",
+              "value": "={{ $json.lokasi }}"
+            },
+            {
+              "name": "ringkasan",
+              "value": "={{ $json.ringkasan }}"
+            },
+            {
+              "name": "source",
+              "value": "={{ $json.source }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [
+        20944,
+        1136
+      ],
+      "id": "2553cba1-1858-48dd-a4c0-db15b42432df",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {
+        "fromEmail": "frenzzznerf@gmail.com",
+        "toEmail": "frenzzznerf@gmail.com",
+        "subject": "=🚨 DARURAT: {{ $json.judul }}",
+        "html": "=<div style=\"font-family: Arial, sans-serif; border: 1px solid #ff4444; padding: 20px; border-radius: 10px;\">\n  <h2 style=\"color: #d32f2f;\">Laporan Berita Urgensi Tinggi</h2>\n  <hr>\n  <p><b>Judul:</b> {{ $json.judul }}</p>\n  <p><b>Skor Urgensi:</b> <span style=\"background-color: #ffeb3b; padding: 2px 5px;\">{{ $json.urgensi_final }}/10</span></p>\n  <p><b>Sentimen:</b> {{ $json.sentimen }}</p>\n  <p><b>Tokoh Utama:</b> {{ $json.tokoh }}</p>\n  <p><b>Lokasi Terkait:</b> {{ $json.lokasi }}</p>\n  <p><b>Ringkasan Singkat:</b></p>\n  <blockquote style=\"background: #f9f9f9; padding: 10px; border-left: 5px solid #ccc;\">\n    {{ $json.ringkasan }}\n  </blockquote>\n  <p style=\"font-size: 12px; color: #888;\">Data diproses otomatis oleh {{ $json.source }} pada {{ $now }}</p>\n</div>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        20944,
+        992
+      ],
+      "id": "297e0562-5361-4ff2-a30f-22889d008701",
+      "name": "Send email",
+      "webhookId": "07ef4e2d-43f3-4f31-b986-5f1874820901",
+      "credentials": {
+        "smtp": {
+          "id": "LVe43bofu40dbUym",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Antara News",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Detik News",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Antara News": {
+      "main": [
+        [
+          {
+            "node": "Clean & Deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detik News": {
+      "main": [
+        [
+          {
+            "node": "Clean & Deduplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean & Deduplicate": {
+      "main": [
+        [
+          {
+            "node": "IndoBERT Final Boss",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IndoBERT Final Boss": {
+      "main": [
+        [
+          {
+            "node": "Is Confident?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Confident?": {
+      "main": [
+        [
+          {
+            "node": "Fast Entity Extractor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ollama Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fast Entity Extractor": {
+      "main": [
+        [
+          {
+            "node": "Final Parser & Urgensi Booster",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Fallback": {
+      "main": [
+        [
+          {
+            "node": "Final Parser & Urgensi Booster",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Final Parser & Urgensi Booster": {
+      "main": [
+        [
+          {
+            "node": "Emergency Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emergency Filter": {
+      "main": [
+        [
+          {
+            "node": "Send email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send email": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "71d34a7e-bb51-4df5-bfa0-e9c21b6c4854",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "01483a13326ad69eae9b7713e2dc2f4eb41ba1da00b7db90bd3019803c5d7b04"
+  },
+  "id": "ktc83dvZUYAuJcZ6",
+  "tags": []
+}
